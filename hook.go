@@ -3,12 +3,12 @@ package logruskrp
 import (
 	"bytes"
 	"crypto/tls"
-	"crypto/x509"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -17,16 +17,43 @@ type Hook struct {
 	ProxyURL   string
 	KafkaTopic string
 	client     *http.Client
-	formatter  *logrus.JSONFormatter
 	options    *Options
+	formatter  *logrus.JSONFormatter
+
+	entryCh chan *logrus.Entry
+	flushCh chan chan bool
 }
 
 type Options struct {
-	HTTPHeaders map[string]string
-	CertPath    string
-	CertKeyPath string
-	CertCaPath  string
+	Async  *AsyncOptions
+	Client *ClientOptions
 }
+
+type ClientOptions struct {
+	Headers   map[string]string
+	Timeout   time.Duration
+	TLSConfig *tls.Config
+}
+
+type AsyncOptions struct {
+	// QueueTimeout specifies the length of time to wait
+	// before flushing the records. The timeout counter
+	// begins when there is at least one record. A value
+	// of Duration(0) means that the RecordLength must
+	// be reached before any records are flushed.
+	//
+	QueueTimeout time.Duration
+
+	// RecordLength specifies the number of records to
+	// hold onto before flushing the records. A value of
+	// uint(0) means that the QueueTimeout must be reached
+	// before any records are flushed.
+	//
+	RecordLength uint
+}
+
+const defaultQueueTimeoutSeconds = 30
+const defaultRecordLength = 10
 
 func NewHook(proxyURL, kafkaTopic string, options *Options) (*Hook, error) {
 	_, err := url.Parse(proxyURL)
@@ -37,24 +64,43 @@ func NewHook(proxyURL, kafkaTopic string, options *Options) (*Hook, error) {
 		return nil, errors.New("A Kafka topic must be specified")
 	}
 
-	client, err := newHttpClient(options)
+	if options == nil {
+		options = &Options{}
+	}
+
+	if options.Client == nil {
+		options.Client = &ClientOptions{
+			Headers: map[string]string{},
+		}
+	}
+
+	if options.Async != nil {
+		if options.Async.QueueTimeout == 0 && options.Async.RecordLength == 0 {
+			options.Async.QueueTimeout = defaultQueueTimeoutSeconds * time.Second
+			options.Async.RecordLength = defaultRecordLength
+		}
+	}
+
+	client, err := newClient(options.Client)
 	if err != nil {
 		return nil, err
 	}
 
-	if options == nil {
-		options = &Options{
-			HTTPHeaders: map[string]string{},
-		}
-	}
-
-	return &Hook{
+	hook := &Hook{
 		ProxyURL:   proxyURL,
 		KafkaTopic: kafkaTopic,
 		client:     client,
 		formatter:  &logrus.JSONFormatter{},
 		options:    options,
-	}, nil
+	}
+
+	if options.Async != nil {
+		hook.entryCh = make(chan *logrus.Entry)
+		hook.flushCh = make(chan chan bool)
+		go hook.collectEntries()
+	}
+
+	return hook, nil
 }
 
 func (h *Hook) Levels() []logrus.Level {
@@ -62,19 +108,101 @@ func (h *Hook) Levels() []logrus.Level {
 }
 
 func (h *Hook) Fire(entry *logrus.Entry) error {
-	payload, err := h.formatter.Format(entry)
+	if h.entryCh == nil {
+		return h.flushEntry(entry)
+	}
+
+	h.entryCh <- entry
+	return nil
+}
+
+func (h *Hook) Flush() {
+	done := make(chan bool)
+	h.flushCh <- done
+	<-done
+}
+
+func (h *Hook) collectEntries() {
+	entries := make([]*logrus.Entry, 0)
+	queueTimeout := h.options.Async.QueueTimeout
+	recordLength := int(h.options.Async.RecordLength)
+
+	timer := time.NewTimer(queueTimeout)
+	var timerCh <-chan time.Time
+
+	for {
+		select {
+		case entry := <-h.entryCh:
+			entries = append(entries, entry)
+
+			if len(entries) >= recordLength && recordLength > 0 {
+				go h.flushEntries(entries)
+
+				entries = make([]*logrus.Entry, 0)
+				timerCh = nil
+			} else if timerCh == nil && queueTimeout > 0 {
+				timer.Reset(queueTimeout)
+				timerCh = timer.C
+			}
+
+		case <-timerCh:
+			if len(entries) > 0 {
+				go h.flushEntries(entries)
+				entries = make([]*logrus.Entry, 0)
+			}
+
+			timerCh = nil
+
+		case done := <-h.flushCh:
+			if len(entries) > 0 {
+				h.flushEntries(entries)
+				entries = make([]*logrus.Entry, 0)
+			}
+
+			timerCh = nil
+			done <- true
+		}
+	}
+}
+
+type Batch struct {
+	Records []Record `json:"records"`
+}
+
+type Record struct {
+	Value json.RawMessage `json:"value"`
+}
+
+func (h *Hook) flushEntry(entry *logrus.Entry) error {
+	return h.flushEntries([]*logrus.Entry{entry})
+}
+
+func (h *Hook) flushEntries(entries []*logrus.Entry) error {
+	batch := Batch{
+		Records: []Record{},
+	}
+
+	for _, entry := range entries {
+		message, err := h.formatter.Format(entry)
+		if err != nil {
+			continue
+		}
+
+		batch.Records = append(batch.Records, Record{Value: json.RawMessage(message)})
+	}
+
+	buffer, err := json.Marshal(&batch)
 	if err != nil {
 		return err
 	}
 
-	records := fmt.Sprintf(`{"records":[{"value":%s}]}`, string(payload))
-	request, err := http.NewRequest("POST", h.ProxyURL+"/topics/"+h.KafkaTopic, bytes.NewReader([]byte(records)))
+	request, err := http.NewRequest("POST", h.ProxyURL+"/topics/"+h.KafkaTopic, bytes.NewReader(buffer))
 	if err != nil {
 		return err
 	}
 
 	request.Header.Set("Content-Type", "application/vnd.kafka.json.v1+json")
-	for name, value := range h.options.HTTPHeaders {
+	for name, value := range h.options.Client.Headers {
 		request.Header.Set(name, value)
 	}
 
@@ -87,35 +215,16 @@ func (h *Hook) Fire(entry *logrus.Entry) error {
 		//respBuff := new(bytes.Buffer)
 		//respBuff.ReadFrom(response.Body)
 
-		return errors.New(fmt.Sprintf("Unable to deliver payload to Kafka REST Proxy on topic '%s' HTTP:%d", h.KafkaTopic, response.StatusCode))
+		return errors.New(fmt.Sprintf("Unable to deliver payload to Kafka REST Proxy on topic '%s' HTTP:%d",
+			h.KafkaTopic, response.StatusCode))
 	}
 
 	return nil
 }
 
-func newHttpClient(options *Options) (*http.Client, error) {
-	tlsConfig := tls.Config{}
-	if options.CertCaPath != "" {
-		caCert, err := ioutil.ReadFile(options.CertCaPath)
-		if err != nil {
-			return nil, err
-		}
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-		tlsConfig.RootCAs = caCertPool
-	}
-
-	if options.CertPath != "" && options.CertKeyPath != "" {
-		cert, err := tls.LoadX509KeyPair(options.CertPath, options.CertKeyPath)
-		if err != nil {
-			return nil, err
-		}
-
-		tlsConfig.Certificates = []tls.Certificate{cert}
-		tlsConfig.BuildNameToCertificate()
-	}
-
+func newClient(options *ClientOptions) (*http.Client, error) {
 	return &http.Client{
-		Transport: &http.Transport{TLSClientConfig: &tlsConfig},
+		Timeout:   options.Timeout,
+		Transport: &http.Transport{TLSClientConfig: options.TLSConfig},
 	}, nil
 }

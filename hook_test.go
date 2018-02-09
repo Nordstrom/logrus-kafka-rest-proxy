@@ -11,30 +11,30 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type Payload struct {
-	Records []Record
+type TestBatch struct {
+	Records []TestRecord
 }
 
-type Record struct {
+type TestRecord struct {
 	Value map[string]string
 }
 
 func Test_fire_hook(t *testing.T) {
-	var payload Payload
+	var batch TestBatch
 	var field, message string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := ioutil.ReadAll(r.Body)
-		err := json.Unmarshal(body, &payload)
+		err := json.Unmarshal(body, &batch)
 		if err != nil {
 			t.Error(err)
 		}
 
-		if len(payload.Records) != 1 {
-			t.Fatalf("Expected a single record but got %d", len(payload.Records))
+		if len(batch.Records) != 1 {
+			t.Fatalf("Expected a single record but got %d", len(batch.Records))
 		}
 
-		field = payload.Records[0].Value["field"]
-		message = payload.Records[0].Value["msg"]
+		field = batch.Records[0].Value["field"]
+		message = batch.Records[0].Value["msg"]
 
 		w.WriteHeader(http.StatusOK)
 	}))
