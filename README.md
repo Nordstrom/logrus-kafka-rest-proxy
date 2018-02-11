@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	hook, _ := logruskrp.NewHook("http://localhost:8082", "hello-logs", &logruskrp.Options{})
+	hook, _ := logrest.NewHook("http://localhost:8082", "hello-logs", &logrest.Options{})
 
 	logger := logrus.New()
 	logger.Hooks.Add(hook)
@@ -32,12 +32,12 @@ import (
 )
 
 func main() {
-	hook, _ := logruskrp.NewHook("https://kafka.example.com", "hello-logs", &logruskrp.Options{
-		Async: &logruskrp.AsyncOptions{
+	hook, _ := logrest.NewHook("https://kafka.example.com", "hello-logs", &logrest.Options{
+		Async: &logrest.AsyncOptions{
 			QueueTimeout: 30 * time.Second,
 			RecordLength: 10,
 		},
-		Client: &logruskrp.ClientOptions{
+		Client: &logrest.ClientOptions{
 			Headers: map[string]string{
 				"X-API-Key": "my-blue-suede-shoes",
 			},
@@ -46,7 +46,7 @@ func main() {
 				...
 			},
 		},
-		Fields: &logruskrp.FieldOptions{
+		Fields: &logrest.FieldOptions{
 			FieldNameMap: map[string]string{
 				"msg":  "message",
 				"time": "timestamp",

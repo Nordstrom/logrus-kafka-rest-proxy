@@ -1,4 +1,4 @@
-package logruskrp
+package logrest
 
 import (
 	"bytes"
