@@ -130,6 +130,10 @@ func (h *Hook) Fire(entry *logrus.Entry) error {
 }
 
 func (h *Hook) Flush() {
+	if h.flushCh == nil {
+		return
+	}
+
 	done := make(chan bool)
 	h.flushCh <- done
 	<-done
