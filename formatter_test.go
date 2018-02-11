@@ -25,7 +25,7 @@ func Test_formatter_additional_fields(t *testing.T) {
 	assert.Equal(t, "world", deserialized["hello"])
 }
 
-func Test_formatter_field_name_map(t *testing.T) {
+func Test_formatter_field_rename_map(t *testing.T) {
 	formatter := newFormatter(map[string]string{},
 		map[string]string{
 			"hello": "buongiorno",

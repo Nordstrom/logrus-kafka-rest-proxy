@@ -47,7 +47,7 @@ func main() {
 			},
 		},
 		Fields: &logrest.FieldOptions{
-			FieldNameMap: map[string]string{
+			FieldRenameMap: map[string]string{
 				"msg":  "message",
 				"time": "timestamp",
 			},

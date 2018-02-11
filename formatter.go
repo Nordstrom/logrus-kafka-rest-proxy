@@ -10,13 +10,13 @@ const defaultTimeFormat string = "2006-01-02T15:04:05.999Z07:00"
 
 type formatter struct {
 	additionalFields map[string]string
-	fieldNameMap     map[string]string
+	fieldRenameMap   map[string]string
 }
 
-func newFormatter(additionalFields, fieldNameMap map[string]string) *formatter {
+func newFormatter(additionalFields, fieldRenameMap map[string]string) *formatter {
 	return &formatter{
 		additionalFields: additionalFields,
-		fieldNameMap:     fieldNameMap,
+		fieldRenameMap:   fieldRenameMap,
 	}
 }
 
@@ -46,7 +46,7 @@ func (f *formatter) Format(entry *logrus.Entry) ([]byte, error) {
 }
 
 func (f *formatter) fieldName(name string) string {
-	if desiredName, ok := f.fieldNameMap[name]; ok {
+	if desiredName, ok := f.fieldRenameMap[name]; ok {
 		return desiredName
 	}
 

@@ -32,7 +32,7 @@ type Options struct {
 
 type FieldOptions struct {
 	AdditionalFields map[string]string
-	FieldNameMap     map[string]string
+	FieldRenameMap   map[string]string
 }
 
 type ClientOptions struct {
@@ -76,7 +76,7 @@ func NewHook(proxyURL, kafkaTopic string, options *Options) (*Hook, error) {
 
 	if options.Fields == nil {
 		options.Fields = &FieldOptions{
-			FieldNameMap:     map[string]string{},
+			FieldRenameMap:   map[string]string{},
 			AdditionalFields: map[string]string{},
 		}
 	}
@@ -103,7 +103,7 @@ func NewHook(proxyURL, kafkaTopic string, options *Options) (*Hook, error) {
 		ProxyURL:   proxyURL,
 		KafkaTopic: kafkaTopic,
 		client:     client,
-		formatter:  newFormatter(options.Fields.AdditionalFields, options.Fields.FieldNameMap),
+		formatter:  newFormatter(options.Fields.AdditionalFields, options.Fields.FieldRenameMap),
 		options:    options,
 	}
 
