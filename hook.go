@@ -18,7 +18,7 @@ type Hook struct {
 	KafkaTopic string
 	client     *http.Client
 	options    *Options
-	formatter  *logrus.JSONFormatter
+	formatter  logrus.Formatter
 
 	entryCh chan *logrus.Entry
 	flushCh chan chan bool
@@ -27,6 +27,12 @@ type Hook struct {
 type Options struct {
 	Async  *AsyncOptions
 	Client *ClientOptions
+	Fields *FieldOptions
+}
+
+type FieldOptions struct {
+	AdditionalFields map[string]string
+	FieldNameMap     map[string]string
 }
 
 type ClientOptions struct {
@@ -68,6 +74,13 @@ func NewHook(proxyURL, kafkaTopic string, options *Options) (*Hook, error) {
 		options = &Options{}
 	}
 
+	if options.Fields == nil {
+		options.Fields = &FieldOptions{
+			FieldNameMap:     map[string]string{},
+			AdditionalFields: map[string]string{},
+		}
+	}
+
 	if options.Client == nil {
 		options.Client = &ClientOptions{
 			Headers: map[string]string{},
@@ -90,7 +103,7 @@ func NewHook(proxyURL, kafkaTopic string, options *Options) (*Hook, error) {
 		ProxyURL:   proxyURL,
 		KafkaTopic: kafkaTopic,
 		client:     client,
-		formatter:  &logrus.JSONFormatter{},
+		formatter:  newFormatter(options.Fields.AdditionalFields, options.Fields.FieldNameMap),
 		options:    options,
 	}
 

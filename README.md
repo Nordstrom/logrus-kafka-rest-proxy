@@ -46,6 +46,16 @@ func main() {
 				...
 			},
 		},
+		Fields: &logruskrp.FieldOptions{
+			FieldNameMap: map[string]string{
+				"msg":  "message",
+				"time": "timestamp",
+			},
+			AdditionalFields: map[string]string{
+				"env":  "test",
+				"host": os.Getenv("HOSTNAME"),
+			},
+		},
 	})
 
 	logger := logrus.New()
