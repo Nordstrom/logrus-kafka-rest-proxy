@@ -7,7 +7,7 @@ A [Kafka REST Proxy](https://www.confluent.io/blog/a-comprehensive-open-source-r
 
 A simple, synchronous example
 
-```
+```go
 import (
 	"github.com/Nordstrom/logrus-kafka-rest-proxy"
 	"github.com/sirupsen/logrus"
@@ -25,7 +25,7 @@ func main() {
 
 An asynchronous example with all the fixings
 
-```
+```go
 import (
 	"github.com/Nordstrom/logrus-kafka-rest-proxy"
 	"github.com/sirupsen/logrus"
