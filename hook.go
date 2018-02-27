@@ -56,6 +56,9 @@ type AsyncOptions struct {
 	// before any records are flushed.
 	//
 	RecordLength uint
+
+	//MaxRecordLength unit
+	//BufferTimeout time.Duration
 }
 
 const defaultQueueTimeoutSeconds = 30
